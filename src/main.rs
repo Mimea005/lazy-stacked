@@ -2,12 +2,9 @@
 // - stg log
 
 use anyhow::Result;
-use crossterm::event::{Event, KeyCode};
-use crossterm::{
-    event,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    ExecutableCommand,
-};
+use app::App;
+use crossterm::event::{Event, KeyCode, KeyEvent};
+use crossterm::{event, terminal::disable_raw_mode};
 use ratatui::layout::{Constraint, Layout};
 use ratatui::widgets::Widget;
 use ratatui::Frame;
@@ -16,19 +13,15 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
     Terminal,
 };
-use std::io::stdout;
 use std::io::BufRead;
 use std::process;
 
-enum Focus {
-    Diff,
-    Log,
-}
+mod app;
 
 fn main() {
-    enable_raw_mode().unwrap();
-    stdout().execute(EnterAlternateScreen).unwrap();
-    let mut term = Terminal::new(CrosstermBackend::new(stdout())).unwrap();
+    let mut app = App::new();
+    let stdout = app.stdout();
+    let mut term = Terminal::new(CrosstermBackend::new(stdout)).unwrap();
     let mut command_list = Vec::new();
 
     loop {
@@ -37,15 +30,14 @@ fn main() {
         let event = event::read().unwrap();
 
         match event {
-            Event::Key(key) => match key.code {
-                KeyCode::Char('q') => break,
-                key => command_list.push(key),
+            Event::Key(KeyEvent {code, ..}) if code == KeyCode::Char('q') =>  {
+                break;
             },
+            Event::Key(key) => command_list.push(key),
             _ => {}
         }
     }
 
-    stdout().execute(LeaveAlternateScreen).unwrap();
     disable_raw_mode().unwrap();
 }
 
