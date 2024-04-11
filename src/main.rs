@@ -2,16 +2,14 @@
 // - stg log
 
 use core::panic;
-use anyhow::Result;
-use std::io::BufRead;
-use std::process;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::prelude::*;
-use ratatui::widgets::*;
 use std::io::stdout;
 
 mod app;
+mod widgets;
 use app::App;
+use widgets::*;
 
 #[derive(Default)]
 struct State {
@@ -71,68 +69,4 @@ fn ui(frame: &mut Frame, state: &mut State) {
     frame.render_widget(StgSeries, main_layout[0]);
     frame.render_stateful_widget(KeyHistory, right_column[0], &mut state.key_history);
     frame.render_widget(StgLog, right_column[1])
-}
-
-struct StgSeries;
-
-impl Widget for StgSeries {
-    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
-    where
-        Self: Sized,
-    {
-        let text = process::Command::new("stg")
-            .arg("series")
-            .output()
-            .unwrap()
-            .stdout
-            .lines()
-            .map(Result::unwrap)
-            .fold(String::new(), |acc, line| format!("{:}\n{:}", acc, line));
-        Paragraph::new(text)
-            .block(Block::default().title("series").borders(Borders::ALL))
-            .render(area, buf);
-    }
-}
-
-struct StgLog;
-impl Widget for StgLog {
-    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
-    where
-        Self: Sized,
-    {
-        let text = process::Command::new("stg")
-            .arg("log")
-            .output()
-            .unwrap()
-            .stdout
-            .lines()
-            .map(Result::unwrap)
-            .fold(String::new(), |acc, line| format!("{:}\n{:}", acc, line));
-        Paragraph::new(text)
-            .block(Block::default().title("Log").borders(Borders::ALL))
-            .render(area, buf)
-    }
-}
-
-struct KeyHistory;
-impl StatefulWidget for KeyHistory {
-    type State = Vec<KeyEvent>;
-    fn render(
-        self,
-        area: ratatui::prelude::Rect,
-        buf: &mut ratatui::prelude::Buffer,
-        state: &mut Self::State,
-    ) {
-        let text: String = state
-            .iter()
-            .rev()
-            .take(5)
-            .map(
-                |KeyEvent {
-                     code, modifiers, ..
-                 }| format!("{modifiers:?} {code:?}\n"),
-            )
-            .collect();
-        Paragraph::new(text).block(Block::default().title("Hist").borders(Borders::ALL)).render(area, buf)
-    }
 }
