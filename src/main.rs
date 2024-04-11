@@ -1,47 +1,66 @@
 // - stg series
 // - stg log
 
-use anyhow::Result;
-use app::App;
-use crossterm::event::{Event, KeyCode, KeyEvent};
-use crossterm::{event, terminal::disable_raw_mode};
-use ratatui::layout::{Constraint, Layout};
-use ratatui::widgets::Widget;
-use ratatui::Frame;
-use ratatui::{
-    backend::CrosstermBackend,
-    widgets::{Block, Borders, Paragraph},
-    Terminal,
-};
+use core::panic;
 use std::io::BufRead;
 use std::process;
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use ratatui::prelude::*;
+use ratatui::widgets::*;
+use std::io::stdout;
 
 mod app;
+use app::App;
 
-fn main() {
-    let mut app = App::new();
-    let stdout = app.stdout();
-    let mut term = Terminal::new(CrosstermBackend::new(stdout)).unwrap();
-    let mut command_list = Vec::new();
-
-    loop {
-        term.draw(|frame| ui(frame, &command_list)).unwrap();
-
-        let event = event::read().unwrap();
-
-        match event {
-            Event::Key(KeyEvent {code, ..}) if code == KeyCode::Char('q') =>  {
-                break;
-            },
-            Event::Key(key) => command_list.push(key),
-            _ => {}
-        }
-    }
-
-    disable_raw_mode().unwrap();
+#[derive(Default)]
+struct State {
+    pub key_history: Vec<KeyCode>,
 }
 
-fn ui(frame: &mut Frame, command_list: &Vec<KeyCode>) {
+fn main() {
+    let mut late_panic = false;
+    {
+        let stdout = stdout();
+        let mut app = App::<State>::default();
+        let mut term = Terminal::new(CrosstermBackend::new(stdout)).unwrap();
+
+        loop {
+            term.draw(|frame| ui(frame, &mut app.state)).unwrap();
+
+            let event = event::read().unwrap();
+
+            match event {
+                Event::Key(KeyEvent {
+                    code: KeyCode::Char('q'),
+                    ..
+                }) => {
+                    break;
+                }
+                Event::Key(KeyEvent {
+                    code: KeyCode::Char('p'),
+                    modifiers,
+                    ..
+                }) => {
+                    if modifiers.intersects(KeyModifiers::CONTROL) {
+                        late_panic = true;
+                        break;
+                    } else {
+                        panic!("Manually triggered panic!")
+                    }
+                }
+                Event::Key(KeyEvent {code, ..}) => app.state.key_history.push(code),
+                _ => {}
+            }
+        }
+    }
+    println!("Exited normally");
+
+    if late_panic {
+        panic!("A late panic!")
+    }
+}
+
+fn ui(frame: &mut Frame, state: &mut State) {
     let main_layout =
         Layout::horizontal(Constraint::from_percentages([50, 50])).split(frame.size());
 
@@ -49,7 +68,7 @@ fn ui(frame: &mut Frame, command_list: &Vec<KeyCode>) {
         Layout::vertical([Constraint::Max(7), Constraint::Fill(1)]).split(main_layout[1]);
 
     frame.render_widget(stg_series_widget(), main_layout[0]);
-    frame.render_widget(key_widget(command_list), right_column[0]);
+    frame.render_widget(key_widget(&state.key_history), right_column[0]);
     frame.render_widget(stg_log_widget(), right_column[1])
 }
 

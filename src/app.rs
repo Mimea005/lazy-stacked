@@ -1,52 +1,62 @@
-use std::io::{stdout, Stdout};
+use std::io::stdout;
 use std::mem::ManuallyDrop;
 use std::panic::{self, PanicInfo};
+use std::thread;
 
 use crossterm::cursor::Show;
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+};
 use crossterm::{execute, ExecutableCommand};
 
-pub struct App {
-    stdout: Stdout,
+pub struct App<State> {
+    pub state: State,
     panic_hook: ManuallyDrop<Box<dyn Fn(&PanicInfo) + Send + Sync>>,
 }
 
-impl App {
-    pub fn new() -> App {
+impl<State> App<State> {
+    pub fn new(state: State) -> App<State> {
         let original_hook = panic::take_hook();
 
-        let mut app = unsafe {
+        let app = unsafe {
             App {
-                stdout: stdout(),
+                state,
                 panic_hook: std::mem::transmute_copy(&original_hook),
             }
         };
 
         std::panic::set_hook(Box::new(move |panic| {
-            App::reset_terminal();
+            reset_terminal();
             original_hook(panic);
         }));
 
         enable_raw_mode().unwrap();
-        app.stdout().execute(EnterAlternateScreen).unwrap();
+        stdout().execute(EnterAlternateScreen).unwrap();
         app
-    }
-
-    pub fn stdout(&mut self) -> &mut Stdout {
-        &mut self.stdout
-    }
-
-    fn reset_terminal() {
-        let _ = stdout().execute(LeaveAlternateScreen);
-        let _ = disable_raw_mode();
     }
 }
 
-impl Drop for App {
+impl<State: Default> Default for App<State> {
+    fn default() -> Self {
+        App::new(State::default())
+    }
+}
+
+impl<State> Drop for App<State> {
     fn drop(&mut self) {
-        App::reset_terminal();
+        reset_terminal();
+
+        if thread::panicking() {
+            return;
+        }
+
         let original_hook: Box<dyn Fn(&PanicInfo) + Send + Sync> =
             unsafe { std::mem::transmute_copy(&mut self.panic_hook) };
         panic::set_hook(Box::new(move |panic| original_hook(panic)))
     }
+}
+
+fn reset_terminal() {
+    let _ = execute!(stdout(), LeaveAlternateScreen, Show);
+    let _ = disable_raw_mode();
 }
