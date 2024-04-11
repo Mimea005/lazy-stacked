@@ -2,6 +2,7 @@
 // - stg log
 
 use core::panic;
+use anyhow::Result;
 use std::io::BufRead;
 use std::process;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
@@ -14,7 +15,7 @@ use app::App;
 
 #[derive(Default)]
 struct State {
-    pub key_history: Vec<KeyCode>,
+    pub key_history: Vec<KeyEvent>,
 }
 
 fn main() {
@@ -48,7 +49,7 @@ fn main() {
                         panic!("Manually triggered panic!")
                     }
                 }
-                Event::Key(KeyEvent {code, ..}) => app.state.key_history.push(code),
+                Event::Key(key) => app.state.key_history.push(key),
                 _ => {}
             }
         }
@@ -67,42 +68,71 @@ fn ui(frame: &mut Frame, state: &mut State) {
     let right_column =
         Layout::vertical([Constraint::Max(7), Constraint::Fill(1)]).split(main_layout[1]);
 
-    frame.render_widget(stg_series_widget(), main_layout[0]);
-    frame.render_widget(key_widget(&state.key_history), right_column[0]);
-    frame.render_widget(stg_log_widget(), right_column[1])
+    frame.render_widget(StgSeries, main_layout[0]);
+    frame.render_stateful_widget(KeyHistory, right_column[0], &mut state.key_history);
+    frame.render_widget(StgLog, right_column[1])
 }
 
-fn stg_series_widget() -> impl Widget {
-    let text = process::Command::new("stg")
-        .arg("series")
-        .output()
-        .unwrap()
-        .stdout
-        .lines()
-        .map(Result::unwrap)
-        .fold(String::new(), |acc, line| format!("{:}\n{:}", acc, line));
+struct StgSeries;
 
-    Paragraph::new(text).block(Block::default().title("series").borders(Borders::ALL))
+impl Widget for StgSeries {
+    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
+    where
+        Self: Sized,
+    {
+        let text = process::Command::new("stg")
+            .arg("series")
+            .output()
+            .unwrap()
+            .stdout
+            .lines()
+            .map(Result::unwrap)
+            .fold(String::new(), |acc, line| format!("{:}\n{:}", acc, line));
+        Paragraph::new(text)
+            .block(Block::default().title("series").borders(Borders::ALL))
+            .render(area, buf);
+    }
 }
 
-fn stg_log_widget() -> impl Widget {
-    let text = process::Command::new("stg")
-        .arg("log")
-        .output()
-        .unwrap()
-        .stdout
-        .lines()
-        .map(Result::unwrap)
-        .fold(String::new(), |acc, line| format!("{:}\n{:}", acc, line));
-    Paragraph::new(text).block(Block::default().title("Log").borders(Borders::ALL))
+struct StgLog;
+impl Widget for StgLog {
+    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
+    where
+        Self: Sized,
+    {
+        let text = process::Command::new("stg")
+            .arg("log")
+            .output()
+            .unwrap()
+            .stdout
+            .lines()
+            .map(Result::unwrap)
+            .fold(String::new(), |acc, line| format!("{:}\n{:}", acc, line));
+        Paragraph::new(text)
+            .block(Block::default().title("Log").borders(Borders::ALL))
+            .render(area, buf)
+    }
 }
 
-fn key_widget(command_list: &Vec<KeyCode>) -> impl Widget {
-    let text: String = command_list
-        .iter()
-        .rev()
-        .take(5)
-        .map(|key| format!("{key:?}\n"))
-        .collect();
-    Paragraph::new(text).block(Block::default().title("Hist").borders(Borders::ALL))
+struct KeyHistory;
+impl StatefulWidget for KeyHistory {
+    type State = Vec<KeyEvent>;
+    fn render(
+        self,
+        area: ratatui::prelude::Rect,
+        buf: &mut ratatui::prelude::Buffer,
+        state: &mut Self::State,
+    ) {
+        let text: String = state
+            .iter()
+            .rev()
+            .take(5)
+            .map(
+                |KeyEvent {
+                     code, modifiers, ..
+                 }| format!("{modifiers:?} {code:?}\n"),
+            )
+            .collect();
+        Paragraph::new(text).block(Block::default().title("Hist").borders(Borders::ALL)).render(area, buf)
+    }
 }
